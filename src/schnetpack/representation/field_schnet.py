@@ -7,6 +7,7 @@ from torch.nn.init import zeros_
 import schnetpack.properties as structure
 from schnetpack.nn import Dense, scatter_add
 from schnetpack.nn.activations import shifted_softplus
+from schnetpack.representation.base import AtomisticRepresentation
 from schnetpack.representation.schnet import SchNetInteraction
 from schnetpack.utils import required_fields_from_properties
 
@@ -246,7 +247,7 @@ class NuclearMagneticMomentEmbedding(nn.Module):
         return dmu
 
 
-class FieldSchNet(nn.Module):
+class FieldSchNet(AtomisticRepresentation):
     """FieldSchNet architecture for modeling interactions with external fields and response properties as described in
     [#field4]_.
 
@@ -289,12 +290,18 @@ class FieldSchNet(nn.Module):
             electric_field_modifier (torch.nn.Module): If provided, use this module to modify the electric field. E.g.
                                                        for solvent models or fields from point charges in QM/MM.
         """
-        super().__init__()
-        self.n_atom_basis = n_atom_basis
+        AtomisticRepresentation.__init__(
+            self,
+            n_atom_basis=n_atom_basis,
+            n_interactions=n_interactions,
+            radial_basis=radial_basis,
+            cutoff_fn=cutoff_fn,
+            activation=activation,
+            nuclear_embedding=nn.Embedding(max_z, n_atom_basis, padding_idx=0),
+            electronic_embeddings=None,
+        )
         self.size = (self.n_atom_basis,)
         self.n_filters = n_filters or self.n_atom_basis
-        self.radial_basis = radial_basis
-        self.cutoff_fn = cutoff_fn
 
         if response_properties is not None:
             external_fields = required_fields_from_properties(response_properties)
@@ -302,12 +309,9 @@ class FieldSchNet(nn.Module):
         self.external_fields = external_fields
         self.electric_field_modifier = electric_field_modifier
 
-        # layers
-        self.embedding = nn.Embedding(max_z, self.n_atom_basis, padding_idx=0)
-
         if properties.magnetic_field in self.external_fields:
             self.nmm_embedding = NuclearMagneticMomentEmbedding(
-                n_atom_basis=n_atom_basis, max_z=max_z
+                n_atom_basis=self.n_atom_basis, max_z=max_z
             )
         else:
             self.nmm_embedding = None
@@ -317,9 +321,9 @@ class FieldSchNet(nn.Module):
                 n_atom_basis=self.n_atom_basis,
                 n_rbf=self.radial_basis.n_rbf,
                 n_filters=self.n_filters,
-                activation=activation,
+                activation=self.activation,
             ),
-            n_interactions,
+            self.n_interactions,
             shared_interactions,
         )
 
@@ -327,10 +331,10 @@ class FieldSchNet(nn.Module):
         self.field_interaction = snn.replicate_module(
             lambda: FieldSchNetFieldInteraction(
                 external_fields=self.external_fields,
-                n_atom_basis=n_atom_basis,
-                activation=activation,
+                n_atom_basis=self.n_atom_basis,
+                activation=self.activation,
             ),
-            n_interactions,
+            self.n_interactions,
             shared_interactions,
         )
 
@@ -338,23 +342,23 @@ class FieldSchNet(nn.Module):
         self.dipole_interaction = snn.replicate_module(
             lambda: DipoleInteraction(
                 external_fields=self.external_fields,
-                n_atom_basis=n_atom_basis,
+                n_atom_basis=self.n_atom_basis,
                 n_rbf=self.radial_basis.n_rbf,
-                activation=activation,
+                activation=self.activation,
             ),
-            n_interactions,
+            self.n_interactions,
             shared_interactions,
         )
 
         # Dipole updates
         self.initial_dipole_update = DipoleUpdate(
-            external_fields=self.external_fields, n_atom_basis=n_atom_basis
+            external_fields=self.external_fields, n_atom_basis=self.n_atom_basis
         )
         self.dipole_update = snn.replicate_module(
             lambda: DipoleUpdate(
-                external_fields=self.external_fields, n_atom_basis=n_atom_basis
+                external_fields=self.external_fields, n_atom_basis=self.n_atom_basis
             ),
-            n_interactions,
+            self.n_interactions,
             shared_interactions,
         )
 
@@ -392,7 +396,7 @@ class FieldSchNet(nn.Module):
         f_ij = self.radial_basis(d_ij)
         rcut_ij = self.cutoff_fn(d_ij)
 
-        q = self.embedding(atomic_numbers)[:, None]
+        q = self.embed(inputs)[:, None]
         qs = q.shape
         mu = {
             field: torch.zeros((qs[0], 3, qs[2]), device=q.device)

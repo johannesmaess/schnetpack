@@ -6,6 +6,7 @@ import torch.nn.functional as F
 
 import schnetpack.properties as properties
 import schnetpack.nn as snn
+from schnetpack.representation.base import AtomisticRepresentation
 
 
 __all__ = ["PaiNN", "PaiNNInteraction", "PaiNNMixing"]
@@ -117,7 +118,7 @@ class PaiNNMixing(nn.Module):
         return q, mu
 
 
-class PaiNN(nn.Module):
+class PaiNN(AtomisticRepresentation):
     """PaiNN - polarizable interaction neural network
 
     References:
@@ -158,47 +159,41 @@ class PaiNN(nn.Module):
             electronic_embeddings: list of electronic embeddings. E.g. for spin and
                 charge (see spk.nn.embeddings.ElectronicEmbedding)
         """
-        super(PaiNN, self).__init__()
-
-        self.n_atom_basis = n_atom_basis
-        self.n_interactions = n_interactions
-        self.cutoff_fn = cutoff_fn
-        self.cutoff = cutoff_fn.cutoff
-        self.radial_basis = radial_basis
-
-        # initialize embeddings
-        if nuclear_embedding is None:
-            nuclear_embedding = nn.Embedding(100, n_atom_basis)
-        self.embedding = nuclear_embedding
-        if electronic_embeddings is None:
-            electronic_embeddings = []
-        electronic_embeddings = nn.ModuleList(electronic_embeddings)
-        self.electronic_embeddings = electronic_embeddings
+        AtomisticRepresentation.__init__(
+            self,
+            n_atom_basis=n_atom_basis,
+            n_interactions=n_interactions,
+            radial_basis=radial_basis,
+            cutoff_fn=cutoff_fn,
+            activation=activation,
+            nuclear_embedding=nuclear_embedding,
+            electronic_embeddings=electronic_embeddings,
+        )
 
         # initialize filter layers
         self.share_filters = shared_filters
         if shared_filters:
             self.filter_net = snn.Dense(
-                self.radial_basis.n_rbf, 3 * n_atom_basis, activation=None
+                self.radial_basis.n_rbf, 3 * self.n_atom_basis, activation=None
             )
         else:
             self.filter_net = snn.Dense(
                 self.radial_basis.n_rbf,
-                self.n_interactions * n_atom_basis * 3,
+                self.n_interactions * self.n_atom_basis * 3,
                 activation=None,
             )
 
         # initialize interaction blocks
         self.interactions = snn.replicate_module(
             lambda: PaiNNInteraction(
-                n_atom_basis=self.n_atom_basis, activation=activation
+                n_atom_basis=self.n_atom_basis, activation=self.activation
             ),
             self.n_interactions,
             shared_interactions,
         )
         self.mixing = snn.replicate_module(
             lambda: PaiNNMixing(
-                n_atom_basis=self.n_atom_basis, activation=activation, epsilon=epsilon
+                n_atom_basis=self.n_atom_basis, activation=self.activation, epsilon=epsilon
             ),
             self.n_interactions,
             shared_interactions,
@@ -236,9 +231,7 @@ class PaiNN(nn.Module):
             filter_list = torch.split(filters, 3 * self.n_atom_basis, dim=-1)
 
         # compute initial embeddings
-        q = self.embedding(atomic_numbers)
-        for embedding in self.electronic_embeddings:
-            q = q + embedding(q, inputs)
+        q = self.embed(inputs)
         q = q.unsqueeze(1)
 
         # compute interaction blocks and update atomic embeddings

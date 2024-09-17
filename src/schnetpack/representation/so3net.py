@@ -8,11 +8,12 @@ import schnetpack.nn as snn
 import schnetpack.nn.so3 as so3
 import schnetpack.properties as properties
 from schnetpack.nn import ElectronicEmbedding
+from schnetpack.representation.base import AtomisticRepresentation
 
 __all__ = ["SO3net"]
 
 
-class SO3net(nn.Module):
+class SO3net(AtomisticRepresentation):
     """
     A simple SO3-equivariant representation using spherical harmonics and
     Clebsch-Gordon tensor products.
@@ -47,54 +48,47 @@ class SO3net(nn.Module):
             electronic_embeddings: list of electronic embeddings. E.g. for spin and
                 charge (see spk.nn.embeddings.ElectronicEmbedding)
         """
-        super(SO3net, self).__init__()
-
-        self.n_atom_basis = n_atom_basis
-        self.n_interactions = n_interactions
+        AtomisticRepresentation.__init__(
+            self,
+            n_atom_basis=n_atom_basis,
+            n_interactions=n_interactions,
+            radial_basis=radial_basis,
+            cutoff_fn=cutoff_fn,
+            activation=activation,
+            nuclear_embedding=nuclear_embedding,
+            electronic_embeddings=electronic_embeddings,
+        )
         self.lmax = lmax
-        self.cutoff_fn = cutoff_fn
-        self.cutoff = cutoff_fn.cutoff
-        self.radial_basis = radial_basis
         self.return_vector_representation = return_vector_representation
-        self.activation = activation
-
-        # initialize embeddings
-        if nuclear_embedding is None:
-            nuclear_embedding = nn.Embedding(100, n_atom_basis)
-        self.embedding = nuclear_embedding
-        if electronic_embeddings is None:
-            electronic_embeddings = []
-        electronic_embeddings = nn.ModuleList(electronic_embeddings)
-        self.electronic_embeddings = electronic_embeddings
 
         # initialize shperical harmonics
         self.sphharm = so3.RealSphericalHarmonics(lmax=lmax)
 
         # initialize filters
         self.so3convs = snn.replicate_module(
-            lambda: so3.SO3Convolution(lmax, n_atom_basis, self.radial_basis.n_rbf),
+            lambda: so3.SO3Convolution(lmax, self.n_atom_basis, self.radial_basis.n_rbf),
             self.n_interactions,
             shared_interactions,
         )
 
         # initialize interaction blocks
         self.mixings1 = snn.replicate_module(
-            lambda: nn.Linear(n_atom_basis, n_atom_basis, bias=False),
+            lambda: nn.Linear(self.n_atom_basis, self.n_atom_basis, bias=False),
             self.n_interactions,
             shared_interactions,
         )
         self.mixings2 = snn.replicate_module(
-            lambda: nn.Linear(n_atom_basis, n_atom_basis, bias=False),
+            lambda: nn.Linear(self.n_atom_basis, self.n_atom_basis, bias=False),
             self.n_interactions,
             shared_interactions,
         )
         self.mixings3 = snn.replicate_module(
-            lambda: nn.Linear(n_atom_basis, n_atom_basis, bias=False),
+            lambda: nn.Linear(self.n_atom_basis, self.n_atom_basis, bias=False),
             self.n_interactions,
             shared_interactions,
         )
         self.gatings = snn.replicate_module(
-            lambda: so3.SO3ParametricGatedNonlinearity(n_atom_basis, lmax),
+            lambda: so3.SO3ParametricGatedNonlinearity(self.n_atom_basis, lmax),
             self.n_interactions,
             shared_interactions,
         )
@@ -127,9 +121,7 @@ class SO3net(nn.Module):
         cutoff_ij = self.cutoff_fn(d_ij)[..., None]
 
         # compute initial embeddings
-        x0 = self.embedding(atomic_numbers)
-        for embedding in self.electronic_embeddings:
-            x0 = x0 + embedding(x0, inputs)
+        x0 = self.embed(inputs)
         x0 = x0.unsqueeze(1)
 
         # compute interaction blocks and update atomic embeddings

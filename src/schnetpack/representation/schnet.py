@@ -4,6 +4,7 @@ from torch import nn
 import schnetpack.properties as properties
 from schnetpack.nn import Dense, scatter_add
 from schnetpack.nn.activations import shifted_softplus
+from schnetpack.representation.base import AtomisticRepresentation
 
 import schnetpack.nn as snn
 
@@ -70,7 +71,7 @@ class SchNetInteraction(nn.Module):
         return x
 
 
-class SchNet(nn.Module):
+class SchNet(AtomisticRepresentation):
     """SchNet architecture for learning representations of atomistic systems
 
     References:
@@ -115,22 +116,17 @@ class SchNet(nn.Module):
             electronic_embeddings: list of electronic embeddings. E.g. for spin and
                 charge (see spk.nn.embeddings.ElectronicEmbedding)
         """
-        super().__init__()
-        self.n_atom_basis = n_atom_basis
+        AtomisticRepresentation.__init__(
+            self,
+            n_atom_basis=n_atom_basis,
+            n_interactions=n_interactions,
+            radial_basis=radial_basis,
+            cutoff_fn=cutoff_fn,
+            activation=activation,
+            nuclear_embedding=nuclear_embedding,
+            electronic_embeddings=electronic_embeddings,
+        )
         self.n_filters = n_filters or self.n_atom_basis
-        self.radial_basis = radial_basis
-        self.cutoff_fn = cutoff_fn
-        self.cutoff = cutoff_fn.cutoff
-
-        # initialize embeddings
-        if nuclear_embedding is None:
-            nuclear_embedding = nn.Embedding(100, n_atom_basis)
-        self.embedding = nuclear_embedding
-        if electronic_embeddings is None:
-            electronic_embeddings = []
-        electronic_embeddings = nn.ModuleList(electronic_embeddings)
-
-        self.electronic_embeddings = electronic_embeddings
 
         # initialize interaction blocks
         self.interactions = snn.replicate_module(
@@ -138,16 +134,17 @@ class SchNet(nn.Module):
                 n_atom_basis=self.n_atom_basis,
                 n_rbf=self.radial_basis.n_rbf,
                 n_filters=self.n_filters,
-                activation=activation,
+                activation=self.activation,
             ),
-            n_interactions,
+            self.n_interactions,
             shared_interactions,
         )
-
-    def forward(self, inputs: Dict[str, torch.Tensor]):
-
+    
+    def interact(self, x: torch.Tensor, inputs: Dict[str, torch.Tensor]):
+        """
+        Compute interaction blocks and update atomic embeddings.
+        """
         # get tensors from input dictionary
-        atomic_numbers = inputs[properties.Z]
         r_ij = inputs[properties.Rij]
         idx_i = inputs[properties.idx_i]
         idx_j = inputs[properties.idx_j]
@@ -156,16 +153,18 @@ class SchNet(nn.Module):
         d_ij = torch.norm(r_ij, dim=1)
         f_ij = self.radial_basis(d_ij)
         rcut_ij = self.cutoff_fn(d_ij)
-
-        # compute initial embeddings
-        x = self.embedding(atomic_numbers)
-        for embedding in self.electronic_embeddings:
-            x = x + embedding(x, inputs)
-
-        # compute interaction blocks and update atomic embeddings
+        
         for interaction in self.interactions:
             v = interaction(x, f_ij, idx_i, idx_j, rcut_ij)
             x = x + v
+        return x
+
+    def forward(self, inputs: Dict[str, torch.Tensor]):
+        # compute initial embeddings
+        x = self.embed(inputs)
+
+        # compute interaction blocks and update atomic embeddings
+        x = self.interact(x, inputs)
 
         # collect results
         inputs["scalar_representation"] = x

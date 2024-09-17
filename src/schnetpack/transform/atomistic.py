@@ -15,7 +15,6 @@ __all__ = [
     "ScaleProperty",
 ]
 
-
 class SubtractCenterOfMass(Transform):
     """
     Subtract center of mass from positions.
