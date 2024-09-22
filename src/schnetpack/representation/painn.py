@@ -198,25 +198,32 @@ class PaiNN(AtomisticRepresentation):
             self.n_interactions,
             shared_interactions,
         )
-
-    def forward(self, inputs: Dict[str, torch.Tensor]):
+        
+    def embed(self, inputs: Dict[str, torch.Tensor]):
         """
-        Compute atomic representations/embeddings.
+        Compute atomic embeddings.
 
         Args:
             inputs: SchNetPack dictionary of input tensors.
 
         Returns:
-            torch.Tensor: atom-wise representation.
-            list of torch.Tensor: intermediate atom-wise representations, if
-            return_intermediate=True was used.
+            torch.Tensor: nuclear embeddings.
+            torch.Tensor: electronic embeddings.
         """
-        # get tensors from input dictionary
+        # compute initial embeddings
+        # q:  first element (along dim 1) of q_mu is scalar representation
+        # mu: following is the three-dimensional vector representation initialized to zero
         atomic_numbers = inputs[properties.Z]
+        q_mu = torch.zeros((len(atomic_numbers), 1+3, self.n_atom_basis), device=atomic_numbers.device)
+        q_mu[:, 0] = AtomisticRepresentation.embed(self, inputs)
+        return q_mu
+    
+    def interact(self, inputs: Dict[str, torch.Tensor], q_mu):
+        # get tensors from input dictionary
         r_ij = inputs[properties.Rij]
         idx_i = inputs[properties.idx_i]
         idx_j = inputs[properties.idx_j]
-        n_atoms = atomic_numbers.shape[0]
+        n_atoms = inputs[properties.Z].shape[0]
 
         # compute atom and pair features
         d_ij = torch.norm(r_ij, dim=1, keepdim=True)
@@ -229,21 +236,18 @@ class PaiNN(AtomisticRepresentation):
             filter_list = [filters] * self.n_interactions
         else:
             filter_list = torch.split(filters, 3 * self.n_atom_basis, dim=-1)
-
-        # compute initial embeddings
-        q = self.embed(inputs)
-        q = q.unsqueeze(1)
-
+            
         # compute interaction blocks and update atomic embeddings
-        qs = q.shape
-        mu = torch.zeros((qs[0], 3, qs[2]), device=q.device)
+        q, mu = torch.split(q_mu, [1, 3], dim=1)
         for i, (interaction, mixing) in enumerate(zip(self.interactions, self.mixing)):
             q, mu = interaction(q, mu, filter_list[i], dir_ij, idx_i, idx_j, n_atoms)
             q, mu = mixing(q, mu)
-        q = q.squeeze(1)
-
-        # collect results
-        inputs["scalar_representation"] = q
+        q_mu = torch.cat([q, mu], dim=1)
+        
+        return q_mu
+    
+    def save(self, inputs, q_mu):
+        q, mu = torch.split(q_mu, [1, 3], dim=1)
+        inputs["scalar_representation"] = q.squeeze(1)
         inputs["vector_representation"] = mu
-
         return inputs

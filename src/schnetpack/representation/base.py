@@ -58,3 +58,20 @@ class AtomisticRepresentation(nn.Module):
         for embedding in self.electronic_embeddings:
             x = x + embedding(x, inputs)
         return x
+    
+    def interact(self, inputs: Dict[str, torch.Tensor], x: torch.Tensor):
+        """
+        Compute interaction blocks and update atomic embeddings.
+        """
+        raise NotImplementedError
+    
+    def save(self, inputs: Dict[str, torch.Tensor], x: torch.Tensor):
+        """
+        Save the atomic embeddings.
+        """
+        raise NotImplementedError
+    
+    def forward(self, inputs: Dict[str, torch.Tensor]):
+        x = self.embed(inputs)
+        x = self.interact(inputs, x)
+        return self.save(inputs, x)

@@ -140,7 +140,7 @@ class SchNet(AtomisticRepresentation):
             shared_interactions,
         )
     
-    def interact(self, x: torch.Tensor, inputs: Dict[str, torch.Tensor]):
+    def interact(self, inputs: Dict[str, torch.Tensor], x: torch.Tensor):
         """
         Compute interaction blocks and update atomic embeddings.
         """
@@ -158,15 +158,7 @@ class SchNet(AtomisticRepresentation):
             v = interaction(x, f_ij, idx_i, idx_j, rcut_ij)
             x = x + v
         return x
-
-    def forward(self, inputs: Dict[str, torch.Tensor]):
-        # compute initial embeddings
-        x = self.embed(inputs)
-
-        # compute interaction blocks and update atomic embeddings
-        x = self.interact(x, inputs)
-
-        # collect results
-        inputs["scalar_representation"] = x
-
+    
+    def save(self, inputs, x):
+        inputs['scalar_representation'] = x
         return inputs
