@@ -17,32 +17,34 @@ class Correlation(nn.Module):
         self.output_key = output_key
         self.model_outputs = [output_key]
 
-
     def forward(self, inputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        inputs[self.output_key] = self.calculate_correlation_lowest_eigenvalues(inputs) 
+        return inputs
+
+    def calculate_correlation_lowest_eigenvalues(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         # compute scalar representations
         sr = inputs['scalar_representation']
         idx_m = inputs[properties.idx_m]
         maxm = int(idx_m[-1]) + 1
 
-        tmp = torch.zeros(maxm, dtype=sr.dtype, device=sr.device)
+        
+        # get submatrices corresponding to each molecule
         split_idx = torch.bincount(idx_m)
+        sr_per_molecule = torch.split(sr, split_idx.tolist())
         
-        # get submatrices
-        tensors = torch.split(sr, split_idx.tolist())
-
-        # compute minimal eigenvalue of correlation matrix
-        cmat = [t @ t.T for t in tensors]
-        min_eigval = [torch.linalg.eigvalsh(c)[0] for c in cmat]
-        
-        for i in range(maxm):
-            tmp[i].add_(min_eigval[i])
-        outputs = tmp
-
-        inputs[self.output_key] = outputs 
-        return inputs
+        # Note: eigvalsh also supports batched computation.
+        # If the molecules in batch have the same number of atoms N (or every matrix is reduced to the size of the feature dimension F),
+        # the computation can be done in parallel by `eigvalsh(sr.view(batch_size, ...))`.
+        lowest_eigenvalues = torch.zeros(maxm, dtype=sr.dtype, device=sr.device)
+        for i, sr_for_molecule in enumerate(sr_per_molecule):
+            # compute minimal eigenvalue of correlation matrix
+            c = sr_for_molecule @ sr_for_molecule.T
+            min_eigval = torch.linalg.eigvalsh(c)[0]
+            lowest_eigenvalues[i] = min_eigval
+        return lowest_eigenvalues
     
 
-class FCorrelation(nn.Module):
+class FCorrelation(Correlation):
     """
     n_in: input dimension
     """
@@ -55,9 +57,7 @@ class FCorrelation(nn.Module):
                  aggregation_mode: str = "sum",
                  output_key: str = "y",
                  ):
-        super(FCorrelation, self).__init__()
-        self.output_key = output_key
-        self.model_outputs = [output_key]
+        super(FCorrelation, self).__init__(output_key=output_key)
         self.n_in = n_in
 
         if aggregation_mode is None and self.per_atom_output_key is None:
@@ -77,32 +77,10 @@ class FCorrelation(nn.Module):
 
 
     def forward(self, inputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        # compute scalar representations
-        sr = inputs['scalar_representation']
-        idx_m = inputs[properties.idx_m]
-        maxm = int(idx_m[-1]) + 1
-
-        tmp = torch.zeros((maxm, self.n_in), dtype=sr.dtype, device=sr.device)
-        split_idx = torch.bincount(idx_m)
-        
-        # get submatrices
-        tensors = torch.split(sr, split_idx.tolist())
-
-        # compute minimal eigenvalue of correlation matrix
-        cmat = [t.T @ t for t in tensors] # list of n_in x n_in matrices
-        min_eigvecs = [torch.linalg.eigh(c)[1][0] for c in cmat]
-        
-        for i in range(maxm):
-            tmp[i].add_(min_eigvecs[i])
+        tmp = self.calculate_correlation_lowest_eigenvalues(inputs)
         
         # predict atomwise contributions
         y = self.outnet(tmp)
         
         inputs[self.output_key] = torch.squeeze(y, -1)
         return inputs
-        
-        outputs = tmp
-
-        inputs[self.output_key] = outputs 
-        return inputs
-    
