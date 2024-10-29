@@ -75,6 +75,11 @@ class Correlation(nn.Module):
             tmp = torch.zeros((maxm, min_eigvecs[0].shape[0]), dtype=sr.dtype, device=sr.device)
             for i in range(maxm):
                 tmp[i].add_(min_eigvecs[i])
+            
+            # debug
+            print(torch.linalg.eigh(cmat[0])[0][:5])
+            print('det=', torch.linalg.det(cmat[0]))
+            
             # predict atomwise contributions
             inputs[self.output_key] = torch.squeeze(self.outnet(tmp))
 
