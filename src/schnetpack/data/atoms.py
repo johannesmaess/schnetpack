@@ -200,6 +200,7 @@ class ASEAtomsData(BaseAtomsData):
         subset_idx: Optional[List[int]] = None,
         property_units: Optional[Dict[str, str]] = None,
         distance_unit: Optional[str] = None,
+        load_successor: bool = False,
     ):
         """
         Args:
@@ -255,6 +256,8 @@ class ASEAtomsData(BaseAtomsData):
                     self._units[prop], unit
                 )
                 self._units[prop] = unit
+                
+        self.load_successor = load_successor
 
     def __len__(self) -> int:
         if self.subset_idx is not None:
@@ -360,6 +363,15 @@ class ASEAtomsData(BaseAtomsData):
                 torch.tensor(row["cell"][None].copy()) * self.distance_conversion
             )
             properties[structure.pbc] = torch.tensor(row["pbc"])
+            
+            if self.load_successor:
+                # Load successor to retrieve positions of next atom
+                row_next = conn.get(idx + 2)
+                properties["_positions_next"] = (
+                    torch.tensor(row_next["positions"].copy()) * self.distance_conversion
+                )
+                # For control we also save _idx_nex
+                properties["_idx_next"] = torch.tensor([idx + 1])            
 
         return properties
 

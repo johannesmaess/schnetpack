@@ -61,6 +61,7 @@ class AtomsDataModule(pl.LightningDataModule):
         cleanup_workdir_stage: Optional[str] = "test",
         splitting: Optional[SplittingStrategy] = None,
         pin_memory: Optional[bool] = False,
+        load_successor: Optional[bool] = False,
     ):
         """
         Args:
@@ -146,6 +147,8 @@ class AtomsDataModule(pl.LightningDataModule):
 
         self.train_sampler_cls = train_sampler_cls
         self.train_sampler_args = train_sampler_args
+        
+        self.load_successor = load_successor
 
     @property
     def train_transforms(self):
@@ -185,6 +188,7 @@ class AtomsDataModule(pl.LightningDataModule):
                 property_units=self.property_units,
                 distance_unit=self.distance_unit,
                 load_properties=self.load_properties,
+                load_successor=self.load_successor,
             )
 
             # load and generate partitions if needed

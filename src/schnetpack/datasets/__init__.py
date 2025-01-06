@@ -7,5 +7,3 @@ from .ani1 import *
 from .materials_project import *
 from .omdb import *
 from .tmqm import *
-from .ext_atoms import *
-from .ext_md17 import *
