@@ -30,9 +30,10 @@ class CastMap(Transform):
         inputs: Dict[str, torch.Tensor],
     ) -> Dict[str, torch.Tensor]:
         for k, v in inputs.items():
-            vdtype = str(v.dtype).split(".")[-1]
-            if vdtype in self.type_map:
-                inputs[k] = v.to(dtype=as_dtype(self.type_map[vdtype]))
+            if isinstance(v, torch.Tensor):
+                vdtype = str(v.dtype).split(".")[-1]
+                if vdtype in self.type_map:
+                    inputs[k] = v.to(dtype=as_dtype(self.type_map[vdtype]))
         return inputs
 
 
