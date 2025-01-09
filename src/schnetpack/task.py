@@ -162,9 +162,8 @@ class AtomisticTask(pl.LightningModule):
             for constraint in output.constraints:
                 pred, targets = constraint(pred, targets, output)
         return pred, targets
-
-    def training_step(self, batch, batch_idx):
-
+    
+    def forward_step(self, batch):
         targets = {
             output.target_property: batch[output.target_property]
             for output in self.outputs
@@ -177,7 +176,11 @@ class AtomisticTask(pl.LightningModule):
 
         pred = self.predict_without_postprocessing(batch)
         pred, targets = self.apply_constraints(pred, targets)
+        
+        return pred, targets
 
+    def training_step(self, batch, batch_idx):
+        pred, targets = self.forward_step(batch)
         loss = self.loss_fn(pred, targets)
 
         self.log("train_loss", loss, on_step=True, on_epoch=False, prog_bar=False)
@@ -187,19 +190,7 @@ class AtomisticTask(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         torch.set_grad_enabled(self.grad_enabled)
 
-        targets = {
-            output.target_property: batch[output.target_property]
-            for output in self.outputs
-            if not isinstance(output, UnsupervisedModelOutput)
-        }
-        try:
-            targets["considered_atoms"] = batch["considered_atoms"]
-        except:
-            pass
-
-        pred = self.predict_without_postprocessing(batch)
-        pred, targets = self.apply_constraints(pred, targets)
-
+        pred, targets = self.forward_step(batch)
         loss = self.loss_fn(pred, targets)
 
         self.log(
@@ -217,19 +208,7 @@ class AtomisticTask(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         torch.set_grad_enabled(self.grad_enabled)
 
-        targets = {
-            output.target_property: batch[output.target_property]
-            for output in self.outputs
-            if not isinstance(output, UnsupervisedModelOutput)
-        }
-        try:
-            targets["considered_atoms"] = batch["considered_atoms"]
-        except:
-            pass
-
-        pred = self.predict_without_postprocessing(batch)
-        pred, targets = self.apply_constraints(pred, targets)
-
+        pred, targets = self.forward_step(batch)
         loss = self.loss_fn(pred, targets)
 
         self.log(
