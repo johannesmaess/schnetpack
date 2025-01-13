@@ -3,7 +3,7 @@ import math
 import torch
 import numpy as np
 
-__all__ = ["SplittingStrategy", "RandomSplit", "SubsamplePartitions"]
+__all__ = ["SplittingStrategy", "RandomSplit", "SubsamplePartitions", "ValWsSplit"]
 
 
 def absolute_split_sizes(dsize: int, split_sizes: List[int]) -> List[int]:
@@ -62,6 +62,26 @@ def random_split(dsize: int, *split_sizes: Union[int, float]) -> List[torch.tens
     return partition_sizes_idx
 
 
+def valws_split(dsize: int, *split_sizes: Union[int, float]) -> List[torch.tensor]:
+    """
+    Create a training-validation-test-split for which the first n_val indices (0, ..., n_val-1) are used for the validation split, to enable DEQ warm starts, and the rest is randomly split for the training and test split.
+
+    Args:
+        dsize - Size of dataset.
+        split_sizes - Sizes for each split. One can be set to -1 to assign all
+            remaining data. Values in [0, 1] can be used to give relative partition
+            sizes.
+    """
+    split_sizes = absolute_split_sizes(dsize, split_sizes)
+    indices = (torch.randperm(split_sizes[0]+split_sizes[2]) + split_sizes[1]).tolist() 
+    partition_sizes_idx = [
+        indices[:split_sizes[0]],
+        list(range(split_sizes[1])),
+        indices[split_sizes[0]:split_sizes[0]+split_sizes[2]]
+    ]
+    return partition_sizes_idx
+
+
 class SplittingStrategy:
     """
     Base class to implement various data splitting methods.
@@ -93,6 +113,17 @@ class RandomSplit(SplittingStrategy):
     def split(self, dataset, *split_sizes) -> List[torch.tensor]:
         dsize = len(dataset)
         partition_sizes_idx = random_split(dsize, *split_sizes)
+        return partition_sizes_idx
+
+
+class ValWsSplit(SplittingStrategy):
+    """
+    Splitting strategy that creates a training-validation-test-split for which the first n_val indices (0, ..., n_val-1) are used for the validation split, to enable DEQ warm starts, and the rest is randomly split for the training and test split.
+    """
+
+    def split(self, dataset, *split_sizes) -> List[torch.tensor]:
+        dsize = len(dataset)
+        partition_sizes_idx = valws_split(dsize, *split_sizes)
         return partition_sizes_idx
 
 
