@@ -65,6 +65,7 @@ class Forces(nn.Module):
             [inputs[prop] for prop in self.required_derivatives],
             grad_outputs=go,
             create_graph=self.training,
+            retain_graph=True, # needed for jac_reg. todo jm : find out if this affects MD speed. if so, only retain_graph in training.
         )
 
         if self.calc_forces:
