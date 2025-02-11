@@ -55,6 +55,9 @@ class Forces(nn.Module):
             self.required_derivatives.append(properties.R)
         if self.calc_stress:
             self.required_derivatives.append(properties.strain)
+            
+    def get_required_derivatives(self, inputs: Dict[str, torch.Tensor]) -> List[str]:
+        return self.required_derivatives
 
     def forward(self, inputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         Epred = inputs[self.energy_key]
@@ -62,7 +65,7 @@ class Forces(nn.Module):
         go: List[Optional[torch.Tensor]] = [torch.ones_like(Epred)]
         grads = grad(
             [Epred],
-            [inputs[prop] for prop in self.required_derivatives],
+            [inputs[prop] for prop in self.get_required_derivatives(inputs)],
             grad_outputs=go,
             create_graph=self.training,
             retain_graph=True, # needed for jac_reg. todo jm : find out if this affects MD speed. if so, only retain_graph in training.
