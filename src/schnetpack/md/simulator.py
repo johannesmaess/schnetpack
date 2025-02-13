@@ -120,45 +120,47 @@ class Simulator(nn.Module):
             # Call hooks at the simulation start
             for hook in self.simulator_hooks:
                 hook.on_simulation_start(self)
+                
+            try:
+                for _ in iterator(n_steps):
 
-            for _ in iterator(n_steps):
+                    # Call hook before first half step
+                    for hook in self.simulator_hooks:
+                        hook.on_step_begin(self)
 
-                # Call hook before first half step
+                    # Do half step momenta
+                    self.integrator.half_step(self.system)
+
+                    # Do propagation MD/PIMD
+                    self.integrator.main_step(self.system)
+
+                    # Compute new forces
+                    self.calculator.calculate(self.system)
+
+                    # Call hook after forces
+                    for hook in self.simulator_hooks:
+                        hook.on_step_middle(self)
+
+                    # Do half step momenta
+                    self.integrator.half_step(self.system)
+
+                    # Call hooks after second half step
+                    # Hooks are called in reverse order to guarantee symmetry of
+                    # the propagator when using thermostat and barostats
+                    for hook in self.simulator_hooks[::-1]:
+                        hook.on_step_end(self)
+
+                    # Logging hooks etc
+                    for hook in self.simulator_hooks:
+                        hook.on_step_finalize(self)
+
+                    self.step += 1
+                    self.effective_steps += 1
+
+            finally:
+                # Call hooks at the simulation end
                 for hook in self.simulator_hooks:
-                    hook.on_step_begin(self)
-
-                # Do half step momenta
-                self.integrator.half_step(self.system)
-
-                # Do propagation MD/PIMD
-                self.integrator.main_step(self.system)
-
-                # Compute new forces
-                self.calculator.calculate(self.system)
-
-                # Call hook after forces
-                for hook in self.simulator_hooks:
-                    hook.on_step_middle(self)
-
-                # Do half step momenta
-                self.integrator.half_step(self.system)
-
-                # Call hooks after second half step
-                # Hooks are called in reverse order to guarantee symmetry of
-                # the propagator when using thermostat and barostats
-                for hook in self.simulator_hooks[::-1]:
-                    hook.on_step_end(self)
-
-                # Logging hooks etc
-                for hook in self.simulator_hooks:
-                    hook.on_step_finalize(self)
-
-                self.step += 1
-                self.effective_steps += 1
-
-            # Call hooks at the simulation end
-            for hook in self.simulator_hooks:
-                hook.on_simulation_end(self)
+                    hook.on_simulation_end(self)
 
     @property
     def state_dict(self):
