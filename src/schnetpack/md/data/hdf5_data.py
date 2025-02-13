@@ -44,25 +44,29 @@ class HDF5Loader:
         skip_initial: Optional[int] = 0,
         load_properties: Optional[bool] = True,
     ):
-        self.database = h5py.File(hdf5_database, "r", swmr=True, libver="latest")
+        self.hdf5_database = hdf5_database
         self.skip_initial = skip_initial
-        self.data_groups = list(self.database.keys())
-
+        self.load_properties = load_properties
         self.properties = {}
+
+    def __enter__(self):
+        # Open the HDF5 file with SWMR enabled
+        self.database = h5py.File(self.hdf5_database, "r", swmr=True, libver="latest")
+        self.data_groups = list(self.database.keys())
 
         # Load basic structure properties and MD info
         if "molecules" not in self.data_groups:
             raise HDF5LoaderError(
-                "Molecule data not found in {:s}".format(hdf5_database)
+                f"Molecule data not found in {self.hdf5_database}"
             )
         else:
             self._load_molecule_data()
 
         # If requested, load other properties predicted by the model stored via PropertyStream
-        if load_properties:
+        if self.load_properties:
             if "properties" not in self.data_groups:
                 raise HDF5LoaderError(
-                    "Molecule properties not found in {:s}".format(hdf5_database)
+                    f"Molecule properties not found in {self.hdf5_database}"
                 )
             else:
                 self._load_property_data()
@@ -77,8 +81,14 @@ class HDF5Loader:
             )
 
         log.info(
-            "Loaded properties {:s} from {:s}".format(loaded_properties, hdf5_database)
+            f"Loaded properties {loaded_properties} from {self.hdf5_database}"
         )
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        # Ensure the HDF5 file is closed
+        if hasattr(self, 'database') and self.database:
+            self.database.close()
 
     def _load_molecule_data(self):
         """
