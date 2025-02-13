@@ -231,8 +231,11 @@ class SpkCalculator(Calculator):
             self.forces: force_key,
             self.stress: stress_key,
         }
-
-        self.model = self._load_model(model_file)
+        
+        if isinstance(model_file, torch.nn.Module):
+            self.model = model_file
+        else:
+            self.model = self._load_model(model_file)
         self.model.to(device=device, dtype=dtype)
 
         # set up basic conversion factors
@@ -288,6 +291,10 @@ class SpkCalculator(Calculator):
 
         if self.calculation_required(atoms, properties):
             Calculator.calculate(self, atoms)
+            # if not hasattr(self, 'flag'):
+            #     import code
+            #     code.interact(local=locals())
+                
 
             # Convert to schnetpack input format
             model_inputs = self.converter(atoms)

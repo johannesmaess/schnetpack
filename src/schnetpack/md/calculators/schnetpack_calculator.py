@@ -93,9 +93,16 @@ class SchNetPackCalculator(MDCalculator):
            AtomisticTask: loaded schnetpack model
         """
 
-        log.info("Loading model from {:s}".format(model_file))
         # load model and keep it on CPU, device can be changed afterwards
-        model = load_model(model_file, device=torch.device("cpu")).to(torch.float64)
+        
+        # check if module
+        if isinstance(model_file, torch.nn.Module):
+            log.info("Using passed model file")
+            model = model_file
+        else:
+            log.info("Loading model from {:s}".format(model_file))
+            model = self._load_model(model_file)
+        
         model = model.eval()
 
         if self.stress_key is not None:

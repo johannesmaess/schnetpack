@@ -133,10 +133,13 @@ class MDCalculator(nn.Module):
                         "Requested property {:s} not in " "results".format(p)
                     )
                 else:
-                    dim = self.results[p].shape
+                    res = self.results[p]
+                    if not isinstance(res, torch.Tensor):
+                        res = torch.tensor(res, device=system.device)
+                    dim = res.shape
                     # Bring to general structure of MD code. Second dimension can be n_mol or n_mol x n_atoms.
                     system.properties[p] = (
-                        self.results[p].view(system.n_replicas, -1, *dim[1:])
+                        res.view(system.n_replicas, -1, *dim[1:])
                         * self.property_conversion[p]
                     )
 
