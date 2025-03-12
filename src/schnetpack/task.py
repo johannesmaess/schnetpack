@@ -163,20 +163,20 @@ class AtomisticTask(pl.LightningModule):
                 pred, targets = constraint(pred, targets, output)
         return pred, targets
     
-    def forward_step(self, batch):
+    def filter_for_outputs(self, batch):
         targets = {
             output.target_property: batch[output.target_property]
             for output in self.outputs
             if not isinstance(output, UnsupervisedModelOutput)
         }
-        try:
+        if "considered_atoms" in batch:
             targets["considered_atoms"] = batch["considered_atoms"]
-        except:
-            pass
-
+        return targets
+    
+    def forward_step(self, batch):
+        targets = self.filter_for_outputs(batch)
         pred = self.predict_without_postprocessing(batch)
         pred, targets = self.apply_constraints(pred, targets)
-        
         return pred, targets
 
     def training_step(self, batch, batch_idx):
