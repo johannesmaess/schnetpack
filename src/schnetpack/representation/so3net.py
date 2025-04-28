@@ -94,20 +94,18 @@ class SO3net(AtomisticRepresentation):
         )
         self.so3product = so3.SO3TensorProduct(lmax)
 
-    def forward(self, inputs: Dict[str, torch.Tensor]):
-        """
-        Compute atomic representations/embeddings.
 
-        Args:
-            inputs (dict of torch.Tensor): SchNetPack dictionary of input tensors.
+    def embed(self, inputs: Dict[str, torch.Tensor]):
+        # compute initial embeddings
+        x0 = AtomisticRepresentation.embed(self, inputs)
+        x0 = x0.unsqueeze(1)
 
-        Returns:
-            torch.Tensor: atom-wise representation.
-            list of torch.Tensor: intermediate atom-wise representations, if
-            return_intermediate=True was used.
-        """
+        # compute interaction blocks and update atomic embeddings
+        x = so3.scalar2rsh(x0, int(self.lmax))
+        return x
+        
+    def interact(self, inputs: Dict[str, torch.Tensor], x: torch.Tensor):
         # get tensors from input dictionary
-        atomic_numbers = inputs[properties.Z]
         r_ij = inputs[properties.Rij]
         idx_i = inputs[properties.idx_i]
         idx_j = inputs[properties.idx_j]
@@ -119,13 +117,7 @@ class SO3net(AtomisticRepresentation):
         Yij = self.sphharm(dir_ij)
         radial_ij = self.radial_basis(d_ij)
         cutoff_ij = self.cutoff_fn(d_ij)[..., None]
-
-        # compute initial embeddings
-        x0 = self.embed(inputs)
-        x0 = x0.unsqueeze(1)
-
-        # compute interaction blocks and update atomic embeddings
-        x = so3.scalar2rsh(x0, int(self.lmax))
+        
         for so3conv, mixing1, mixing2, gating, mixing3 in zip(
             self.so3convs, self.mixings1, self.mixings2, self.gatings, self.mixings3
         ):
@@ -136,7 +128,10 @@ class SO3net(AtomisticRepresentation):
             dx = gating(dx)
             dx = mixing3(dx)
             x = x + dx
+            
+        return x
 
+    def save(self, inputs: Dict[str, torch.Tensor], x: torch.Tensor):
         # collect results
         inputs["scalar_representation"] = x[:, 0]
         inputs["multipole_representation"] = x
