@@ -156,7 +156,10 @@ class Simulator(nn.Module):
 
                     self.step += 1
                     self.effective_steps += 1
-
+                    
+            except Exception as e:
+                print(f"Error in simulation step {self.step}: {e}")
+                raise e
             finally:
                 # Call hooks at the simulation end
                 for hook in self.simulator_hooks:

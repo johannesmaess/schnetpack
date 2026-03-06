@@ -63,9 +63,10 @@ class Forces(nn.Module):
         Epred = inputs[self.energy_key]
 
         go: List[Optional[torch.Tensor]] = [torch.ones_like(Epred)]
+        props = self.get_required_derivatives(inputs)
         grads = grad(
             [Epred],
-            [inputs[prop] for prop in self.get_required_derivatives(inputs)],
+            [inputs[prop] for prop in props],
             grad_outputs=go,
             create_graph=self.training,
             retain_graph=True, # needed for jac_reg. todo jm : find out if this affects MD speed. if so, only retain_graph in training.

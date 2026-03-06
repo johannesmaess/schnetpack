@@ -67,7 +67,7 @@ class ReduceLROnPlateau(torch.optim.lr_scheduler.ReduceLROnPlateau):
             cooldown=cooldown,
             min_lr=min_lr,
             eps=eps,
-            verbose=verbose,
+            # verbose=verbose, # TODO schnetpack: was removed in pl
         )
         self.smoothing_factor = smoothing_factor
         self.ema_loss = None

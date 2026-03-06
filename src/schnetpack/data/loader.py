@@ -3,7 +3,11 @@ from torch.utils.data import DataLoader
 
 from typing import Optional, Sequence
 from torch.utils.data import Dataset, Sampler
-from torch.utils.data.dataloader import _collate_fn_t, T_co
+from torch.utils.data.dataloader import _collate_fn_t # , T_co
+
+# SchnetPack TODO: Don't use non-public torch class (it was cleaned away in newer release)
+from typing import TypeVar
+T_co = TypeVar("T_co", covariant=True)
 
 import schnetpack.properties as structure
 

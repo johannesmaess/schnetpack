@@ -117,16 +117,9 @@ class MDCalculator(nn.Module):
         """
         raise NotImplementedError
 
-    def _update_system(self, system: System):
-        """
-        Routine, which looks in self.results for the properties defined in self.required_properties and uses them to
-        update the forces and properties of the provided system. If required, reformatting is carried out here.
-
-        Args:
-            system (schnetpack.md.System): System object containing current state of the simulation.
-        """
+    def _log_required_properties(self, system: System):
+        log_prefix = getattr(self, 'log_prefix', '')
         with self.grad_context:
-            # Collect all requested properties (including forces)
             for p in self.required_properties:
                 if p not in self.results:
                     raise MDCalculatorError(
@@ -138,11 +131,13 @@ class MDCalculator(nn.Module):
                         res = torch.tensor(res, device=system.device)
                     dim = res.shape
                     # Bring to general structure of MD code. Second dimension can be n_mol or n_mol x n_atoms.
-                    system.properties[p] = (
+                    system.properties[log_prefix+p] = (
                         res.view(system.n_replicas, -1, *dim[1:])
                         * self.property_conversion[p]
                     )
-
+                
+    def _set_predicted_properties(self, system: System):
+        with self.grad_context:
             # Set the forces for the system (at this point, already detached)
             self._set_system_forces(system)
 
@@ -153,6 +148,18 @@ class MDCalculator(nn.Module):
             # Set stress of the system if requested:
             if self.stress_key is not None:
                 self._set_system_stress(system)
+                
+    def _update_system(self, system: System):
+        """
+        Routine, which looks in self.results for the properties defined in self.required_properties and uses them to
+        update the forces and properties of the provided system. If required, reformatting is carried out here.
+
+        Args:
+            system (schnetpack.md.System): System object containing current state of the simulation.
+        """
+        # Collect all requested properties (including forces)
+        self._log_required_properties(system)
+        self._set_predicted_properties(system)
 
     def _get_system_molecules(self, system: System):
         """
