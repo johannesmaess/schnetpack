@@ -338,6 +338,7 @@ class AtomsDataModule(pl.LightningDataModule):
             return batch_sampler
 
     def _setup_transforms(self):
+        print('Setting up transforms for the datamodule...')
         for t in self.train_transforms:
             t.datamodule(self)
         for t in self.val_transforms:
