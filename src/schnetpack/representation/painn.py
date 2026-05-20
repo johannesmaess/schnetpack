@@ -199,54 +199,54 @@ class PaiNN(AtomisticRepresentation):
             shared_interactions,
         )
         
-    def embed(self, inputs: Dict[str, torch.Tensor]):
-        """
-        Compute atomic embeddings.
-
-        Args:
-            inputs: SchNetPack dictionary of input tensors.
-
-        Returns:
-            torch.Tensor: nuclear embeddings.
-            torch.Tensor: electronic embeddings.
-        """
-        # compute initial embeddings
-        # q:  first element (along dim 1) of q_mu is scalar representation
-        # mu: following is the three-dimensional vector representation initialized to zero
+    def atom_embed(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """Build the q_mu z-state: scalar slot (index 0) = atomic embedding, vector slots zero."""
         atomic_numbers = inputs[properties.Z]
         q_mu = torch.zeros((len(atomic_numbers), 1+3, self.n_atom_basis), device=atomic_numbers.device)
-        q_mu[:, 0] = AtomisticRepresentation.embed(self, inputs)
+        x = self.embedding(atomic_numbers)
+        for embedding in self.electronic_embeddings:
+            x = x + embedding(x, inputs)
+        q_mu[:, 0] = x
         return q_mu
-    
-    def interact(self, inputs: Dict[str, torch.Tensor], q_mu):
-        # get tensors from input dictionary
-        r_ij = inputs[properties.Rij]
-        idx_i = inputs[properties.idx_i]
-        idx_j = inputs[properties.idx_j]
-        n_atoms = inputs[properties.Z].shape[0]
 
-        # compute atom and pair features
+    def geom_embed(self, inputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """Precompute pair features and per-layer filters (sliced inside interact)."""
+        r_ij = inputs[properties.Rij]
         d_ij = torch.norm(r_ij, dim=1, keepdim=True)
         dir_ij = r_ij / d_ij
         phi_ij = self.radial_basis(d_ij)
         fcut = self.cutoff_fn(d_ij)
-
         filters = self.filter_net(phi_ij) * fcut[..., None]
+        # n_atoms as 0-d tensor so the dict stays homogeneous Dict[str, Tensor]
+        n_atoms = inputs[properties.Z].shape[0]
+        return {
+            'dir_ij': dir_ij,
+            'filters': filters,
+            'idx_i': inputs[properties.idx_i],
+            'idx_j': inputs[properties.idx_j],
+            'n_atoms': torch.tensor(n_atoms, dtype=torch.long, device=dir_ij.device),
+        }
+
+    def interact(self, geom: Dict[str, torch.Tensor], q_mu: torch.Tensor) -> torch.Tensor:
+        dir_ij = geom['dir_ij']
+        filters = geom['filters']
+        idx_i = geom['idx_i']
+        idx_j = geom['idx_j']
+        n_atoms = int(geom['n_atoms'].item())
+
+        # per-layer filter slices (or repeats if shared)
         if self.share_filters:
-            filter_list = [filters] * self.n_interactions
+            filter_list: List[torch.Tensor] = [filters] * self.n_interactions
         else:
-            filter_list = torch.split(filters, 3 * self.n_atom_basis, dim=-1)
-            
-        # compute interaction blocks and update atomic embeddings
+            filter_list = list(torch.split(filters, 3 * self.n_atom_basis, dim=-1))
+
         q, mu = torch.split(q_mu, [1, 3], dim=1)
         for i, (interaction, mixing) in enumerate(zip(self.interactions, self.mixing)):
             q, mu = interaction(q, mu, filter_list[i], dir_ij, idx_i, idx_j, n_atoms)
             q, mu = mixing(q, mu)
-        q_mu = torch.cat([q, mu], dim=1)
-        
-        return q_mu
-    
-    def save(self, inputs, q_mu):
+        return torch.cat([q, mu], dim=1)
+
+    def save(self, inputs: Dict[str, torch.Tensor], q_mu: torch.Tensor) -> Dict[str, torch.Tensor]:
         q, mu = torch.split(q_mu, [1, 3], dim=1)
         inputs["scalar_representation"] = q.squeeze(1)
         inputs["vector_representation"] = mu

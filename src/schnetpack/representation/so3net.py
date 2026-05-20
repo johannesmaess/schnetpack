@@ -95,29 +95,35 @@ class SO3net(AtomisticRepresentation):
         self.so3product = so3.SO3TensorProduct(lmax)
 
 
-    def embed(self, inputs: Dict[str, torch.Tensor]):
-        # compute initial embeddings
-        x0 = AtomisticRepresentation.embed(self, inputs)
+    def atom_embed(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """Pad the atomic embedding to (n_atoms, (Lmax+1)^2, n_z) — scalar block + zero L>0 blocks."""
+        atomic_numbers = inputs[properties.Z]
+        x0 = self.embedding(atomic_numbers)
+        for embedding in self.electronic_embeddings:
+            x0 = x0 + embedding(x0, inputs)
         x0 = x0.unsqueeze(1)
+        return so3.scalar2rsh(x0, int(self.lmax))
 
-        # compute interaction blocks and update atomic embeddings
-        x = so3.scalar2rsh(x0, int(self.lmax))
-        return x
-        
-    def interact(self, inputs: Dict[str, torch.Tensor], x: torch.Tensor):
-        # get tensors from input dictionary
+    def geom_embed(self, inputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """Precompute spherical harmonics, radial basis, and cutoff envelope."""
         r_ij = inputs[properties.Rij]
-        idx_i = inputs[properties.idx_i]
-        idx_j = inputs[properties.idx_j]
-
-        # compute atom and pair features
         d_ij = torch.norm(r_ij, dim=1, keepdim=True)
         dir_ij = r_ij / d_ij
+        return {
+            'Yij': self.sphharm(dir_ij),
+            'radial_ij': self.radial_basis(d_ij),
+            'cutoff_ij': self.cutoff_fn(d_ij)[..., None],
+            'idx_i': inputs[properties.idx_i],
+            'idx_j': inputs[properties.idx_j],
+        }
 
-        Yij = self.sphharm(dir_ij)
-        radial_ij = self.radial_basis(d_ij)
-        cutoff_ij = self.cutoff_fn(d_ij)[..., None]
-        
+    def interact(self, geom: Dict[str, torch.Tensor], x: torch.Tensor) -> torch.Tensor:
+        Yij = geom['Yij']
+        radial_ij = geom['radial_ij']
+        cutoff_ij = geom['cutoff_ij']
+        idx_i = geom['idx_i']
+        idx_j = geom['idx_j']
+
         for so3conv, mixing1, mixing2, gating, mixing3 in zip(
             self.so3convs, self.mixings1, self.mixings2, self.gatings, self.mixings3
         ):
@@ -128,7 +134,7 @@ class SO3net(AtomisticRepresentation):
             dx = gating(dx)
             dx = mixing3(dx)
             x = x + dx
-            
+
         return x
 
     def save(self, inputs: Dict[str, torch.Tensor], x: torch.Tensor):
