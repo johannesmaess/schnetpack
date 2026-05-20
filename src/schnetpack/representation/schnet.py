@@ -140,25 +140,29 @@ class SchNet(AtomisticRepresentation):
             shared_interactions,
         )
     
-    def interact(self, inputs: Dict[str, torch.Tensor], x: torch.Tensor):
-        """
-        Compute interaction blocks and update atomic embeddings.
-        """
-        # get tensors from input dictionary
+    def geom_embed(self, inputs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """Precompute SchNet pair features: radial basis + cutoff envelope + indices."""
         r_ij = inputs[properties.Rij]
-        idx_i = inputs[properties.idx_i]
-        idx_j = inputs[properties.idx_j]
-
-        # compute pair features
         d_ij = torch.norm(r_ij, dim=1)
-        f_ij = self.radial_basis(d_ij)
-        rcut_ij = self.cutoff_fn(d_ij)
-        
+        return {
+            'f_ij': self.radial_basis(d_ij),
+            'rcut_ij': self.cutoff_fn(d_ij),
+            'idx_i': inputs[properties.idx_i],
+            'idx_j': inputs[properties.idx_j],
+        }
+
+    def interact(self, geom: Dict[str, torch.Tensor], x: torch.Tensor) -> torch.Tensor:
+        """Per-layer SchNet interaction loop given precomputed pair features."""
+        f_ij = geom['f_ij']
+        rcut_ij = geom['rcut_ij']
+        idx_i = geom['idx_i']
+        idx_j = geom['idx_j']
+
         for interaction in self.interactions:
             v = interaction(x, f_ij, idx_i, idx_j, rcut_ij)
             x = x + v
         return x
-    
-    def save(self, inputs, x):
+
+    def save(self, inputs: Dict[str, torch.Tensor], x: torch.Tensor) -> Dict[str, torch.Tensor]:
         inputs['scalar_representation'] = x
         return inputs

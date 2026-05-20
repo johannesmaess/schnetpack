@@ -396,7 +396,7 @@ class FieldSchNet(AtomisticRepresentation):
         f_ij = self.radial_basis(d_ij)
         rcut_ij = self.cutoff_fn(d_ij)
 
-        q = self.embed(inputs)[:, None]
+        q = self.atom_embed(inputs)[:, None]
         qs = q.shape
         mu = {
             field: torch.zeros((qs[0], 3, qs[2]), device=q.device)
