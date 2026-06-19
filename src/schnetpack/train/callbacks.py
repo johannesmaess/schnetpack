@@ -87,10 +87,12 @@ class ModelCheckpoint(BaseModelCheckpoint):
     but also saves the best inference model with activated post-processing
     """
 
-    def __init__(self, model_path: str, do_postprocessing=True, *args, **kwargs):
+    def __init__(self, model_path: str, do_postprocessing=True, wandb_alias=None, start_time=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.model_path = model_path
         self.do_postprocessing = do_postprocessing
+        self.wandb_alias = wandb_alias
+        self.start_time = start_time
 
     def on_validation_end(self, trainer, pl_module: AtomisticTask) -> None:
         self.trainer = trainer
